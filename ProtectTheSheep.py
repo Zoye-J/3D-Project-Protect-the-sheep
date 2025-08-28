@@ -51,13 +51,14 @@ wood_respawn_timer = 0
 current_wood_visible = True
 
 wood_count = 0
-max_wood_capacity = 1
+max_wood_capacity = 4
 can_chop_wood = True
 
 # Fire properties
 
 fire_stage = 0  # 0: No fire, 1: Big fire, 2: Small fire, 3: Blinking fire, 4: Out (stays 0)
-fire_stage_durations = [0, 180, 120, 120, 0]  # 0 for stage 4 (no duration)
+# At the top with other variables
+fire_stage_durations = [0, 180, 120, 120]  # 0:no fire, 1:3s, 2:2s, 3:2s
 fire_timer = 0
 fire_pos = [0, 0, 0]  # Center of the opening
 carrying_wood = False  # Is shepherd carrying a wood piece?
@@ -1130,30 +1131,23 @@ def draw_bonfire():
     
     glPushMatrix()
     glTranslatef(fire_pos[0], fire_pos[1], fire_pos[2])
-    
-    # Fire base (always visible at night)
+
+# Always draw the fire base/logs (even when fire is out)
     glPushMatrix()
-    glColor3f(0.3, 0.2, 0.1)  # Dark brown logs
+    glColor3f(0.35, 0.17, 0.04)  # Dark brown logs
     glRotatef(-90, 1, 0, 0)
     gluCylinder(gluNewQuadric(), 8, 6, 40, 8, 3)
-    
-    # Logs in cross pattern (always visible)
-    for i in range(4):
-        glPushMatrix()
-        glRotatef(i * 45, 0, 0, 1)
-        gluCylinder(gluNewQuadric(), 8, 6, 40, 8, 3)
-        glPopMatrix()
     glPopMatrix()
     
-    # Fire effects based on stage
+    # Only draw flames if fire is burning (stages 1-3)
     if fire_stage == 1:  # Big bright fire
         glPushMatrix()
         glColor4f(1.0, 0.5, 0.0, 0.8)  # Bright orange
         glTranslatef(0, 20, 25)
         glutSolidSphere(25, 16, 12)
-        
+
         # Flames
-        glColor4f(1.0, 0.8, 0.0, 0.6) # Yellow
+        glColor4f(1.0, 0.8, 0.0, 0.6)  # Yellow
         glTranslatef(0, 0, 15)
         glutSolidSphere(20, 12, 10)
         glPopMatrix()
@@ -1165,7 +1159,7 @@ def draw_bonfire():
         glutSolidSphere(15, 12, 10)
         
         # Small flames
-        glColor4f(1.0, 0.6, 0.0, 0.5) # Yellow-orange
+        glColor4f(1.0, 0.6, 0.0, 0.5)  # Yellow-orange
         glTranslatef(0, 0, 10)
         glutSolidSphere(12, 10, 8)
         glPopMatrix()
@@ -1175,21 +1169,23 @@ def draw_bonfire():
         if int(time.time() * 2) % 2 == 0:
             glPushMatrix()
             glColor4f(1.0, 0.3, 0.0, 0.4)  # Dim orange
-            glTranslatef(0, 0, 15)
+            glTranslatef(0, 20, 15)
             glutSolidSphere(10, 10, 8)
             glPopMatrix()
+    
     
     glPopMatrix()
 
 def draw_wood_in_hand():
     if carrying_wood:
         glPushMatrix()
-        glTranslatef(shepherd_pos[0], shepherd_pos[1], shepherd_pos[2] + 35)
+        glTranslatef(shepherd_pos[0], shepherd_pos[1], shepherd_pos[2]+40 )
         glRotatef(shepherd_rotation + 45, 0, 0, 1)
         
         # Wood piece in hand
-        glColor3f(0.75, 0.45, 0.25)  # Wood color
+        glColor3f(0.35, 0.17, 0.04)  # Wood color
         glRotatef(90, 0, 1, 0)
+        glTranslatef(20, 0, 10)
         gluCylinder(gluNewQuadric(), 4, 4, 20, 8, 3)
         
         # End caps
@@ -1244,11 +1240,7 @@ def handle_wood_throw():
             fire_timer = fire_stage_durations[1]
             print("Wood added to fire! Fire restarted from out")
         
-        else:
-            # Return wood if fire doesn't need it (stage 1 - big fire)
-            wood_count += 1
-            print("Fire is already big and strong, doesn't need wood yet")
-
+        
 
 
 def keyboardListener(key, x, y):
@@ -1356,23 +1348,18 @@ def idle():
 
 
      # Fire logic - only at night
-    if is_night and fire_stage > 0:
-        fire_timer -= 1
-        if fire_timer <= 0:
-            if fire_stage < 3:  # Move to next stage
-                fire_stage += 1
-                fire_timer = fire_stage_durations[fire_stage]
-                print(f"Fire weakened to stage {fire_stage}")
-            else:  # Fire went out - STAY at stage 4 (0)
-                fire_stage = 0  # Stage 4 = No fire
-                fire_timer = 0
-                print("Fire went out! Needs wood to restart.")
-    
-    # Start fire when night begins (only if has wood)
-    if is_night and night_transition > 0.5 and fire_stage == 0 and wood_count > 0:
-        fire_stage = 1
-        fire_timer = fire_stage_durations[1]
-        print("Bonfire lit! Sheep gathering around...")
+    if is_night:
+        if fire_stage > 0:  # Only if fire is actually burning (stages 1-3)
+            fire_timer -= 1
+            if fire_timer <= 0:
+                if fire_stage < 3:  # Move to next stage: 1→2→3
+                    fire_stage += 1
+                    fire_timer = fire_stage_durations[fire_stage]
+                    print(f"Fire weakened to stage {fire_stage}")
+                else:  # Fire goes OUT after stage 3 (blinking)
+                    fire_stage = 0  # Stage 0 = No fire (completely out)
+                    fire_timer = 0  # ADD THIS LINE - reset timer to 0
+                    print("Fire went out completely! Needs wood to restart.")
     
     check_wood_site_interaction()
 
