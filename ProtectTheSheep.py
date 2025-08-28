@@ -64,7 +64,7 @@ wolves = []
 def create_stars():
     global stars
     stars = []
-    for _ in range(200):  # 200 stars
+    for _ in range(800):  # 200 stars
         # Random position on sky sphere
         angle1 = random.uniform(0, 2 * math.pi)
         angle2 = random.uniform(0, math.pi)
@@ -196,9 +196,9 @@ def draw_sky():
 def draw_ground():
     # Blend between day and night colors
     if is_night:
-        opening_color = (0.0, 0.3, 0.3)    # Dark teal opening
-        middle_color = (0.0, 0.25, 0.25)   # Darker teal middle
-        forest_color = (0.1, 0.2, 0.2)     # Dark blue-green forest
+        opening_color = (0.0, 0.35, 0.0)   
+        middle_color = (0.0, 0.3, 0.0)  
+        forest_color = (0.0, 0.15, 0.0)    
     else:
         # Smooth transition between day and night
         blend = min(night_transition, 1.0)
@@ -1017,8 +1017,8 @@ def draw_axe_in_hand():
         # Axe head
         glPushMatrix()
         glColor3f(0.7, 0.7, 0.7)  # Metal gray
-        glTranslatef(40, 0, 0)
-        glScalef(12, 2, 6)
+        glTranslatef(55, 0, -5)
+        glScalef(12, 2, 10)
         glutSolidCube(1)
         glPopMatrix()
         glPopMatrix()
