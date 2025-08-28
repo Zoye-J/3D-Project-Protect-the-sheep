@@ -36,7 +36,7 @@ shepherd_speed = 10         # Movement speed
 # Sheep properties
 sheeps = []
 num_sheeps = 5
-sheep_speed = 1
+sheep_speed = 1.7
 sheep_direction_change_time = 0.2  # Time between direction changes (seconds)
 sheep_wander_distance = opening_radius-50 
 
@@ -46,13 +46,21 @@ wood_site_pos = [370, 20, 30]  # Position of wood chopping area
 wood_site_radius = 60        
 axe_attached = False         
 current_wood_chops = 0       
-max_chops = 3                
+max_chops = 3               
 wood_respawn_timer = 0       
 current_wood_visible = True
 
 wood_count = 0
-max_wood_capacity = 2
+max_wood_capacity = 1
 can_chop_wood = True
+
+# Fire properties
+
+fire_stage = 0  # 0: No fire, 1: Big fire, 2: Small fire, 3: Blinking fire, 4: Out (stays 0)
+fire_stage_durations = [0, 180, 120, 120, 0]  # 0 for stage 4 (no duration)
+fire_timer = 0
+fire_pos = [0, 0, 0]  # Center of the opening
+carrying_wood = False  # Is shepherd carrying a wood piece?
 
 # Wolf properties
 wolves = []
@@ -642,37 +650,74 @@ def draw_all_sheeps():
 def update_sheep_movement(delta_time):
     for sheep in sheeps:
         if sheep['stuck']:
-            continue  # Skip movement if sheep is stuck
+            continue
+
+        # NIGHT TIME: Sheep come to fire and stand still facing it
+        if is_night and fire_stage > 0:
+            # Calculate direction and distance to fire
+            dx = fire_pos[0] - sheep['pos'][0]
+            dy = fire_pos[1] - sheep['pos'][1]
+            distance = math.sqrt(dx**2 + dy**2)
             
-        # Update movement timer
-        if 'move_timer' not in sheep:
-            sheep['move_timer'] = 0
-            sheep['current_direction'] = random.uniform(0, 2 * math.pi)
-            sheep['move_duration'] = random.uniform(1.0, 3.0)
-        
-        sheep['move_timer'] += delta_time
-        
-        # Change direction when timer expires
-        if sheep['move_timer'] >= sheep['move_duration']:
-            sheep['move_timer'] = 0
-            sheep['current_direction'] = random.uniform(0, 2 * math.pi)
-            sheep['move_duration'] = random.uniform(1.0, 3.0)
-        
-        # Move sheep in current direction
-        move_x = math.cos(sheep['current_direction']) * sheep_speed
-        move_y = math.sin(sheep['current_direction']) * sheep_speed
-        
-        sheep['pos'][0] += move_x
-        sheep['pos'][1] += move_y
-        
-        # Keep sheep within the opening boundaries
-        distance_from_center = math.sqrt(sheep['pos'][0]**2 + sheep['pos'][1]**2)
-        if distance_from_center > opening_radius - 40:  # Leave margin
-            # Bounce back from edge
-            angle_to_center = math.atan2(sheep['pos'][1], sheep['pos'][0])
-            sheep['current_direction'] = angle_to_center + math.pi  # Turn around
-            sheep['pos'][0] = (opening_radius - 50) * math.cos(angle_to_center)
-            sheep['pos'][1] = (opening_radius - 50) * math.sin(angle_to_center)
+            # Target distance from fire (outside bonfire radius)
+            target_distance = random.uniform(100, 150)  # 100-150 units from fire
+            
+            if distance > target_distance + 5:  # Not yet at target position
+                # Move toward target position around fire
+                if distance > 0:
+                    dx /= distance
+                    dy /= distance
+                
+                # Move to target distance
+                sheep['pos'][0] += dx * sheep_speed * 0.8
+                sheep['pos'][1] += dy * sheep_speed * 0.8
+                
+                # Face the fire while moving
+                sheep['rotation'] = math.degrees(math.atan2(dy, dx))
+                
+            else:
+                # Reached target position - STAND STILL
+                # Just face the fire (no movement)
+                if distance > 0:
+                    dx /= distance
+                    dy /= distance
+                    sheep['rotation'] = math.degrees(math.atan2(dy, dx))
+            
+        # DAY TIME: More random and scattered movement
+        else:
+            # Initialize movement variables if not exists
+            if 'move_timer' not in sheep:
+                sheep['move_timer'] = 0
+                sheep['current_direction'] = random.uniform(0, 2 * math.pi)
+                sheep['move_duration'] = random.uniform(0.5, 2.0)
+                sheep['wander_intensity'] = random.uniform(1.5, 3.0)
+            
+            sheep['move_timer'] += delta_time
+            
+            # Change direction more frequently for more randomness
+            if sheep['move_timer'] >= sheep['move_duration']:
+                sheep['move_timer'] = 0
+                sheep['current_direction'] = random.uniform(0, 2 * math.pi)
+                sheep['move_duration'] = random.uniform(0.5, 2.0)
+                sheep['wander_intensity'] = random.uniform(1.5, 3.0)
+            
+            # Move with random speed and direction
+            move_x = math.cos(sheep['current_direction']) * sheep_speed * sheep['wander_intensity']
+            move_y = math.sin(sheep['current_direction']) * sheep_speed * sheep['wander_intensity']
+            
+            sheep['pos'][0] += move_x
+            sheep['pos'][1] += move_y
+            
+            # Keep sheep within the opening boundaries with bounce effect
+            distance_from_center = math.sqrt(sheep['pos'][0]**2 + sheep['pos'][1]**2)
+            if distance_from_center > opening_radius - 40:
+                angle_to_center = math.atan2(sheep['pos'][1], sheep['pos'][0])
+                bounce_variation = random.uniform(-0.5, 0.5)
+                sheep['current_direction'] = angle_to_center + math.pi + bounce_variation
+                sheep['pos'][0] = (opening_radius - 50) * math.cos(angle_to_center)
+                sheep['pos'][1] = (opening_radius - 50) * math.sin(angle_to_center)
+            
+            sheep['rotation'] = sheep['current_direction'] * 180/math.pi
 
 def draw_wolf(wolf):
     glPushMatrix()
@@ -901,14 +946,13 @@ def draw_wood_chopping_site():
         glTranslatef(0, -10, 10)  # Directly on top of the main log
         glColor3f(0.75, 0.45, 0.25)  # Lighter brown wood piece
     
-        # Visual feedback based on chop progress
+         # Visual feedback based on chop progress
         if current_wood_chops == 1:
             glTranslatef(-3, 0, 0)  # Slightly offset after first chop
         elif current_wood_chops == 2:
             glTranslatef(-6, 0, 0)  # More offset after second chop
     
         glRotatef(-90, 1, 0, 0)  # Stand upright like the log
-    
         # Solid wood piece with dark border
         gluCylinder(gluNewQuadric(), 12, 12, 25, 12, 3)
         
@@ -936,6 +980,13 @@ def draw_wood_chopping_site():
         glPopMatrix()
     
         glPopMatrix()  # Closes the wood piece matrix
+
+    if is_night and wood_count > 0:
+        glPushMatrix()
+        glTranslatef(wood_site_pos[0] + 80, wood_site_pos[1], wood_site_pos[2] - 20)
+        glColor4f(1.0, 1.0, 0.0, 0.5)  # Yellow glow
+        glutSolidSphere(30, 8, 6)
+        glPopMatrix()
 
     glPopMatrix()  # Closes the main translate matrix
 
@@ -1031,11 +1082,15 @@ def check_wood_site_interaction():
     distance = math.sqrt((shepherd_pos[0] - wood_site_pos[0])**2 + 
                          (shepherd_pos[1] - wood_site_pos[1])**2)
     
-    # Attach axe when player enters radius, detach when leaves
-    if distance < wood_site_radius:
+    # Calculate distance to wood site
+    distance = math.sqrt((shepherd_pos[0] - wood_site_pos[0])**2 + 
+                         (shepherd_pos[1] - wood_site_pos[1])**2)
+    
+    # Attach axe when player enters radius (DAY ONLY)
+    if distance < wood_site_radius and not is_night:
         axe_attached = True
     else:
-        axe_attached = False  # DETACH when leaving the area
+        axe_attached = False  # No axe at night or when leaving
     
     # Handle wood respawn timer
     if wood_respawn_timer > 0:
@@ -1068,10 +1123,136 @@ def handle_wood_chopping():
                 is_night = True
                 print("NIGHT HAS FALLEN! Wolves become active!")
 
+def draw_bonfire():
+    # Always draw the fire base/logs at night, regardless of fire stage
+    if not is_night:
+        return
+    
+    glPushMatrix()
+    glTranslatef(fire_pos[0], fire_pos[1], fire_pos[2])
+    
+    # Fire base (always visible at night)
+    glPushMatrix()
+    glColor3f(0.3, 0.2, 0.1)  # Dark brown logs
+    glRotatef(-90, 1, 0, 0)
+    gluCylinder(gluNewQuadric(), 8, 6, 40, 8, 3)
+    
+    # Logs in cross pattern (always visible)
+    for i in range(4):
+        glPushMatrix()
+        glRotatef(i * 45, 0, 0, 1)
+        gluCylinder(gluNewQuadric(), 8, 6, 40, 8, 3)
+        glPopMatrix()
+    glPopMatrix()
+    
+    # Fire effects based on stage
+    if fire_stage == 1:  # Big bright fire
+        glPushMatrix()
+        glColor4f(1.0, 0.5, 0.0, 0.8)  # Bright orange
+        glTranslatef(0, 20, 25)
+        glutSolidSphere(25, 16, 12)
+        
+        # Flames
+        glColor4f(1.0, 0.8, 0.0, 0.6) # Yellow
+        glTranslatef(0, 0, 15)
+        glutSolidSphere(20, 12, 10)
+        glPopMatrix()
+        
+    elif fire_stage == 2:  # Small fire
+        glPushMatrix()
+        glColor4f(1.0, 0.4, 0.0, 0.6)  # Orange
+        glTranslatef(0, 20, 20)
+        glutSolidSphere(15, 12, 10)
+        
+        # Small flames
+        glColor4f(1.0, 0.6, 0.0, 0.5) # Yellow-orange
+        glTranslatef(0, 0, 10)
+        glutSolidSphere(12, 10, 8)
+        glPopMatrix()
+        
+    elif fire_stage == 3:  # Blinking fire
+        # Blinking effect - visible only on even frames
+        if int(time.time() * 2) % 2 == 0:
+            glPushMatrix()
+            glColor4f(1.0, 0.3, 0.0, 0.4)  # Dim orange
+            glTranslatef(0, 0, 15)
+            glutSolidSphere(10, 10, 8)
+            glPopMatrix()
+    
+    glPopMatrix()
+
+def draw_wood_in_hand():
+    if carrying_wood:
+        glPushMatrix()
+        glTranslatef(shepherd_pos[0], shepherd_pos[1], shepherd_pos[2] + 35)
+        glRotatef(shepherd_rotation + 45, 0, 0, 1)
+        
+        # Wood piece in hand
+        glColor3f(0.75, 0.45, 0.25)  # Wood color
+        glRotatef(90, 0, 1, 0)
+        gluCylinder(gluNewQuadric(), 4, 4, 20, 8, 3)
+        
+        # End caps
+        gluDisk(gluNewQuadric(), 0, 4, 8, 2)
+        glPushMatrix()
+        glTranslatef(0, 0, 20)
+        gluDisk(gluNewQuadric(), 0, 4, 8, 2)
+        glPopMatrix()
+        
+        glPopMatrix()
+
+
+def handle_wood_collection():
+    global carrying_wood, wood_count
+    
+    if not is_night or wood_count <= 0 or carrying_wood:
+        return
+    
+    # Check if near WOOD PILE (not the chopping log)
+    wood_pile_pos = [wood_site_pos[0] + 80, wood_site_pos[1], wood_site_pos[2] - 30]
+    distance = math.sqrt((shepherd_pos[0] - wood_pile_pos[0])**2 + 
+                         (shepherd_pos[1] - wood_pile_pos[1])**2)
+    
+    # Collection radius around wood pile
+    if distance < 50:  # Smaller radius around wood pile
+        carrying_wood = True
+        wood_count -= 1
+        print(f"Collected 1 wood from pile! Carrying: {carrying_wood}, Remaining: {wood_count}")
+
+def handle_wood_throw():
+    global carrying_wood, fire_stage, fire_timer, wood_count
+    
+    if not carrying_wood or not is_night:
+        return
+    
+    # Check if near fire to throw wood
+    distance_to_fire = math.sqrt((shepherd_pos[0] - fire_pos[0])**2 + 
+                                (shepherd_pos[1] - fire_pos[1])**2)
+    
+    if distance_to_fire < 80:  # Close to fire
+        carrying_wood = False
+        
+        # Can add wood when fire is in stage 2 or 3 (small or blinking)
+        if fire_stage in [2, 3]:
+            fire_stage = 1  # Reset to big fire
+            fire_timer = fire_stage_durations[1]
+            print("Wood added to fire! Fire restored to stage 1")
+        
+        # Can also add wood when fire is completely out (stage 0)
+        elif fire_stage == 0:
+            fire_stage = 1  # Restart to big fire
+            fire_timer = fire_stage_durations[1]
+            print("Wood added to fire! Fire restarted from out")
+        
+        else:
+            # Return wood if fire doesn't need it (stage 1 - big fire)
+            wood_count += 1
+            print("Fire is already big and strong, doesn't need wood yet")
+
 
 
 def keyboardListener(key, x, y):
-    global  shepherd_rotation 
+    global  shepherd_rotation, carrying_wood
 
     if key == b' ':  # SPACE key
         space_pressed = True
@@ -1091,10 +1272,17 @@ def keyboardListener(key, x, y):
     elif key == b'd':
         shepherd_rotation = (shepherd_rotation - shepherd_speed) % 360
     
-    
-    #Wood
-    if key == b'c':  # Chop wood key
-        handle_wood_chopping()
+     # Night actions
+    if is_night:
+        if key == b'c':  # Collect wood (night)
+            handle_wood_collection()
+        elif key == b't':  # Throw wood in fire
+            handle_wood_throw()
+    else:
+        if key == b'c':  # Chop wood (day)
+            handle_wood_chopping()
+
+
 
     
     # Whistle ability
@@ -1153,7 +1341,7 @@ def setupCamera():
                   0, 0, 1)
 
 def idle():
-    global last_time, night_transition
+    global last_time, night_transition, fire_timer, fire_stage, wood_count, carrying_wood
 
     current_time = time.time()
     delta_time = current_time - last_time
@@ -1166,6 +1354,26 @@ def idle():
     elif not is_night and night_transition > 0:
         night_transition -= 0.01
 
+
+     # Fire logic - only at night
+    if is_night and fire_stage > 0:
+        fire_timer -= 1
+        if fire_timer <= 0:
+            if fire_stage < 3:  # Move to next stage
+                fire_stage += 1
+                fire_timer = fire_stage_durations[fire_stage]
+                print(f"Fire weakened to stage {fire_stage}")
+            else:  # Fire went out - STAY at stage 4 (0)
+                fire_stage = 0  # Stage 4 = No fire
+                fire_timer = 0
+                print("Fire went out! Needs wood to restart.")
+    
+    # Start fire when night begins (only if has wood)
+    if is_night and night_transition > 0.5 and fire_stage == 0 and wood_count > 0:
+        fire_stage = 1
+        fire_timer = fire_stage_durations[1]
+        print("Bonfire lit! Sheep gathering around...")
+    
     check_wood_site_interaction()
 
     update_sheep_movement(delta_time)
@@ -1192,9 +1400,27 @@ def showScreen():
 
     # Night time indicator
     if is_night:
-        draw_text(10, 500, "🌙 NIGHT TIME - Be careful!", GLUT_BITMAP_HELVETICA_12)
+        draw_text(10, 500, "NIGHT TIME - Be careful!", GLUT_BITMAP_HELVETICA_12)
     elif night_transition > 0:
         draw_text(10, 500, "Dusk is falling...", GLUT_BITMAP_HELVETICA_12)
+
+    # Draw bonfire (always on top)
+    if is_night:
+        draw_bonfire()
+    
+    # Draw wood in hand if carrying
+    if carrying_wood:
+        draw_wood_in_hand()
+    
+    # Fire status UI
+    if is_night:
+        fire_status = ["OUT - Needs wood", "Big", "Small", "Blinking", "OUT"]
+        draw_text(10, 480, f"Fire: {fire_status[fire_stage]}", GLUT_BITMAP_HELVETICA_12)
+        if fire_stage == 0:
+            draw_text(10, 460, "Fire is out! Add wood with T", GLUT_BITMAP_HELVETICA_12)
+        elif carrying_wood:
+            draw_text(10, 460, "Carrying wood! Press T near fire", GLUT_BITMAP_HELVETICA_12)
+    
 
     draw_text(10, 730, f"Wood :{wood_count}/{max_wood_capacity}")
     draw_text(10, 710, f"Heart Points:")
